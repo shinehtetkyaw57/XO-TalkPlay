@@ -1,0 +1,281 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>XO Game with Voice Chat</title>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Kanit', sans-serif;
+      text-align: center;
+      background: linear-gradient(to right, #f2fcfe, #1c92d2);
+      margin: 0;
+      padding: 0;
+    }
+    h2 {
+      font-size: 28px;
+      color: #fff;
+      margin-top: 20px;
+    }
+    #setup {
+      margin-top: 20px;
+      color: white;
+    }
+    input, button {
+      font-size: 16px;
+      padding: 6px 10px;
+      border-radius: 5px;
+      margin: 5px;
+    }
+    table {
+      margin: auto;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    td {
+      width: 80px;
+      height: 80px;
+      font-size: 36px;
+      text-align: center;
+      vertical-align: middle;
+      border: 2px solid #333;
+      background: white;
+      cursor: pointer;
+    }
+    td.marked {
+      background: #d0f0c0;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 20px;
+      color: white;
+    }
+    #winnerOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-size: 36px;
+      color: #fff;
+      display: none;
+    }
+    .emoji-burst {
+      font-size: 48px;
+      animation: floatEmoji 1.5s ease infinite;
+      margin-top: 10px;
+    }
+    @keyframes floatEmoji {
+      0% { transform: translateY(0); opacity: 1; }
+      50% { transform: translateY(-10px); opacity: 0.8; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body><h2>XO Game</h2>
+<div id="setup">
+  Name: <input type="text" id="playerName" placeholder="Your name">
+  Room ID: <input type="text" id="roomId" value="room123">
+  <button onclick="joinRoom()">Join Room</button>
+</div><div id="status">Waiting...</div>
+<h3 id="playersDisplay"></h3>
+<table id="board"></table>
+<div id="winnerOverlay">
+  <div id="winnerName">🎉 Winner 🎉</div>
+  <div class="emoji-burst">🥳 😄 🎉 🤩</div>
+</div><!-- Voice Chat Controls --><div style="margin-top: 20px;">
+  <button onclick="startCall()">🎙 Start Voice Chat</button>
+  <button onclick="endCall()">❌ End Call</button>
+  <audio id="remoteAudio" autoplay></audio>
+</div><script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script><script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyClhTG2xUVZSYi7LnXtKVzUh4_G2PK-VYk",
+    databaseURL: "https://airvat-4ca28-default-rtdb.firebaseio.com",
+    projectId: "airvat-4ca28",
+    storageBucket: "airvat-4ca28.appspot.com",
+    messagingSenderId: "427771613530"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const boardElement = document.getElementById("board");
+  const statusElement = document.getElementById("status");
+  const winnerOverlay = document.getElementById("winnerOverlay");
+  const winnerName = document.getElementById("winnerName");
+  const playersDisplay = document.getElementById("playersDisplay");
+
+  let playerName = "";
+  let currentRoom = "";
+  let myMark = "";
+
+  function joinRoom() {
+    playerName = document.getElementById("playerName").value.trim();
+    currentRoom = document.getElementById("roomId").value.trim();
+    if (!playerName || !currentRoom) return alert("Fill in both name and room ID");
+
+    const playersRef = db.ref(`games/${currentRoom}/players`);
+    playersRef.once("value").then(snapshot => {
+      const players = snapshot.val() || {};
+      const keys = Object.keys(players);
+
+      if (!keys.includes("X")) {
+        playersRef.child("X").set(playerName);
+        myMark = "X";
+      } else if (!keys.includes("O")) {
+        playersRef.child("O").set(playerName);
+        myMark = "O";
+      } else {
+        alert("Room full!");
+        return;
+      }
+      setupBoard();
+      listenToPlayers();
+      listenToBoard();
+    });
+  }
+
+  function setupBoard() {
+    boardElement.innerHTML = "";
+    for (let r = 0; r < 3; r++) {
+      const row = boardElement.insertRow();
+      for (let c = 0; c < 3; c++) {
+        const cell = row.insertCell();
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        cell.innerText = "";
+        cell.className = "";
+        cell.onclick = cellClicked;
+      }
+    }
+    statusElement.innerText = `You are '${myMark}' (${playerName})`;
+  }
+
+  function listenToPlayers() {
+    db.ref(`games/${currentRoom}/players`).on("value", snapshot => {
+      const players = snapshot.val() || {};
+      const other = myMark === "X" ? "O" : "X";
+      playersDisplay.innerText = `${players[myMark] || "You"} (You) vs ${players[other] || "..."}`;
+    });
+  }
+
+  function cellClicked(e) {
+    const cell = e.target;
+    const row = cell.dataset.row;
+    const col = cell.dataset.col;
+    if (cell.innerText !== "") return;
+
+    const turnRef = db.ref(`games/${currentRoom}/turn`);
+    turnRef.once("value").then(snap => {
+      const turn = snap.val() || "X";
+      if (turn !== myMark) return;
+
+      db.ref(`games/${currentRoom}/board/${row}_${col}`).set(myMark);
+      turnRef.set(myMark === "X" ? "O" : "X");
+    });
+  }
+
+  function listenToBoard() {
+    db.ref(`games/${currentRoom}/board`).on("value", snapshot => {
+      const board = snapshot.val() || {};
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const val = board[`${r}_${c}`] || "";
+          const cell = boardElement.rows[r].cells[c];
+          if (cell.innerText !== val) {
+            cell.innerText = val;
+            if (val) cell.classList.add("marked");
+          }
+        }
+      }
+      checkGameEnd(board);
+    });
+  }
+
+  function checkGameEnd(board) {
+    const get = (r, c) => board[`${r}_${c}`] || "";
+    const lines = [
+      [[0,0],[0,1],[0,2]], [[1,0],[1,1],[1,2]], [[2,0],[2,1],[2,2]],
+      [[0,0],[1,0],[2,0]], [[0,1],[1,1],[2,1]], [[0,2],[1,2],[2,2]],
+      [[0,0],[1,1],[2,2]], [[0,2],[1,1],[2,0]]
+    ];
+    let winner = null;
+    for (let line of lines) {
+      const [a, b, c] = line;
+      const val = get(...a);
+      if (val && val === get(...b) && val === get(...c)) {
+        winner = val;
+        break;
+      }
+    }
+    if (winner) {
+      db.ref(`games/${currentRoom}/players/${winner}`).once("value").then(nameSnap => {
+        const winName = nameSnap.val() || winner;
+        winnerName.innerText = `${winName} Wins 🎉`;
+        winnerOverlay.style.display = "flex";
+        setTimeout(() => {
+          winnerOverlay.style.display = "none";
+          db.ref(`games/${currentRoom}/board`).remove();
+          db.ref(`games/${currentRoom}/turn`).remove();
+        }, 2500);
+      });
+    } else if (Object.keys(board).length === 9) {
+      winnerName.innerText = "Draw! 🤝";
+      winnerOverlay.style.display = "flex";
+      setTimeout(() => {
+        winnerOverlay.style.display = "none";
+        db.ref(`games/${currentRoom}/board`).remove();
+        db.ref(`games/${currentRoom}/turn`).remove();
+      }, 2500);
+    }
+  }
+
+  // === VOICE CHAT ===
+  let localStream;
+  let peerConnection;
+  const voiceRoomRef = firebase.database().ref('voiceRooms/room1');
+  const configuration = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  };
+
+  async function startCall() {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    peerConnection = new RTCPeerConnection(configuration);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.ontrack = event => {
+      document.getElementById('remoteAudio').srcObject = event.streams[0];
+    };
+    peerConnection.onicecandidate = e => {
+      if (e.candidate) {
+        voiceRoomRef.child('candidates').push(JSON.stringify(e.candidate));
+      }
+    };
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    voiceRoomRef.child('offer').set(JSON.stringify(offer));
+
+    voiceRoomRef.child('answer').on('value', async snap => {
+      if (snap.exists() && !peerConnection.currentRemoteDescription) {
+        await peerConnection.setRemoteDescription(JSON.parse(snap.val()));
+      }
+    });
+
+    voiceRoomRef.child('candidates').on('child_added', async snap => {
+      const candidate = new RTCIceCandidate(JSON.parse(snap.val()));
+      await peerConnection.addIceCandidate(candidate);
+    });
+  }
+
+  async function endCall() {
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+      localStream.getTracks().forEach(t => t.stop());
+      voiceRoomRef.remove();
+    }
+  }
+</script></body>
+</html>
