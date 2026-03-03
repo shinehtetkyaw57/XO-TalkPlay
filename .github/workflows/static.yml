@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔥 Online Checker Game</title>
+<style>
+/* 🐉 DRAGON RUNNING GOLD TITLE */
+
+@keyframes dragonMove {
+  0%   { transform: translateX(-40px); }
+  50%  { transform: translateX(40px); }
+  100% { transform: translateX(-40px); }
+}
+
+@keyframes dragonSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+h2 {
+  position: relative;
+  font-size: 28px;
+  font-weight: bold;
+  color: gold;
+  text-shadow:
+    0 0 5px gold,
+    0 0 15px orange,
+    0 0 30px black;
+  animation: dragonMove 5s linear infinite;
+}
+
+/* Dragon Circle Around Text */
+h2::before {
+  content: "🦸";
+  position: absolute;
+  left: -40px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 24px;
+  animation: dragonSpin 4s linear infinite;
+}
+<style>
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:url("https://images.unsplash.com/photo-1528459801416-a9e53bbf4e17");
+  background-size:cover;
+  background-position:center;
+  background-attachment:fixed;
+  font-family:Segoe UI,sans-serif;
+  color:white;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+}
+.wrapper{width:100%;max-width:520px;padding:20px;text-align:center;}
+.screen{display:none;}
+.active{display:block;}
+.card{
+  background:rgba(255,255,255,0.05);
+  padding:20px;border-radius:20px;
+  box-shadow:0 20px 40px rgba(0,0,0,0.6);
+}
+input{
+  width:100%;padding:12px;margin:8px 0;
+  border:none;border-radius:10px;
+  background:#222;color:white;
+}
+button{
+  padding:12px 20px;margin:8px;
+  border:none;border-radius:12px;
+  cursor:pointer;background:#14b8a6;
+  color:white;transition:.2s;
+}
+button:hover{transform:scale(1.05);}
+.board-container{
+  width:100%;aspect-ratio:1/1;
+  border-radius:20px;overflow:hidden;
+  box-shadow:0 20px 40px rgba(0,0,0,0.6);
+  margin-top:15px;
+}
+#board{width:100%;height:100%;display:grid;grid-template-columns:repeat(8,1fr);}
+.cell{aspect-ratio:1/1;display:flex;justify-content:center;align-items:center;}
+.white{background:#e6d2b5;}
+.black{background:#b58863;}
+.piece{
+  width:75%;height:75%;
+  border-radius:50%;position:relative;
+  box-shadow:inset -5px -5px 10px rgba(0,0,0,0.5),
+             inset 5px 5px 10px rgba(255,255,255,0.2);
+}
+.red{background:radial-gradient(circle at 30% 30%,#ff4d4d,#990000);}
+.blackPiece{background:radial-gradient(circle at 30% 30%,#555,#000);}
+.selected{outline:3px solid gold;}
+.king::after{content:"👑";position:absolute;font-size:18px;}
+.scoreBoard{display:flex;justify-content:space-around;margin:10px 0;font-size:18px;}
+.popup{
+  position:fixed;inset:0;background:rgba(0,0,0,0.8);
+  display:flex;justify-content:center;align-items:center;z-index:999;
+}
+.popupBox{background:#111;padding:30px;border-radius:20px;}
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+<div id="roomScreen" class="screen active">
+  <h2>🎮 Create / Join Room</h2>
+  <div class="card">
+    <input id="roomId" placeholder="Enter Room ID">
+    <button onclick="createRoom()">Create Room</button>
+    <button onclick="joinRoom()">Join Room</button>
+    <div id="waitingText"></div>
+  </div>
+</div>
+
+<div id="gameScreen" class="screen">
+  <h2>🔥 Online Checker Game</h2>
+  <div class="scoreBoard">
+    🔴 Red: <span id="redScore">12</span>
+    ⚫ Black: <span id="blackScore">12</span>
+  </div>
+  <div id="turnText"></div>
+  <div class="board-container">
+    <div id="board"></div>
+  </div>
+  <button onclick="resetGame()">Reset</button>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const app=initializeApp({
+  apiKey:"AIzaSyClhTG2xUVZSYi7LnXtKVzUh4_G2PK-VYk",
+  databaseURL:"https://airvat-4ca28-default-rtdb.firebaseio.com",
+  projectId:"airvat-4ca28"
+});
+const db=getDatabase(app);
+
+let board=[],selected=null,currentPlayer="red";
+let myColor=null,roomRef=null;
+
+function showGame(){
+  roomScreen.classList.remove("active");
+  gameScreen.classList.add("active");
+}
+
+function initBoard(){
+  board=[];
+  for(let r=0;r<8;r++){
+    board[r]=[];
+    for(let c=0;c<8;c++){
+      if((r+c)%2==1){
+        if(r<3) board[r][c]="black";
+        else if(r>4) board[r][c]="red";
+        else board[r][c]="";
+      }else board[r][c]=null;
+    }
+  }
+}
+
+function drawBoard(){
+  boardEl.innerHTML="";
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const cell=document.createElement("div");
+      cell.className="cell "+(((r+c)%2==0)?"white":"black");
+      cell.onclick=()=>handleClick(r,c);
+
+      if(board[r][c]){
+        const p=document.createElement("div");
+        p.className="piece "+(board[r][c].includes("red")?"red":"blackPiece");
+        if(board[r][c].includes("king")) p.classList.add("king");
+        if(selected && selected.r==r && selected.c==c)
+          p.classList.add("selected");
+        cell.appendChild(p);
+      }
+      boardEl.appendChild(cell);
+    }
+  }
+  updateScore();
+  turnText.innerText="Turn: "+currentPlayer.toUpperCase();
+}
+
+function canCaptureFrom(r,c){
+  const piece=board[r][c];
+  if(!piece) return false;
+
+  const isKing=piece.includes("king");
+  const isRed=piece.includes("red");
+
+  const dirs=isKing
+    ? [[2,2],[2,-2],[-2,2],[-2,-2]]
+    : isRed
+      ? [[-2,2],[-2,-2]]
+      : [[2,2],[2,-2]];
+
+  for(let [dr,dc] of dirs){
+    let nr=r+dr,nc=c+dc;
+    let mr=r+dr/2,mc=c+dc/2;
+
+    if(nr>=0&&nr<8&&nc>=0&&nc<8){
+      if(board[nr][nc]==="" &&
+         board[mr][mc] &&
+         !board[mr][mc].includes(isRed?"red":"black")){
+         return true;
+      }
+    }
+  }
+  return false;
+}
+
+function canCapture(player){
+  for(let r=0;r<8;r++)
+    for(let c=0;c<8;c++)
+      if(board[r][c] &&
+         board[r][c].includes(player) &&
+         canCaptureFrom(r,c))
+         return true;
+  return false;
+}
+
+function handleClick(r,c){
+  if(myColor!==currentPlayer) return;
+
+  const piece=board[r][c];
+
+  if(piece && piece.includes(currentPlayer)){
+    if(canCapture(currentPlayer) && !canCaptureFrom(r,c)) return;
+    selected={r,c};
+    drawBoard();
+    return;
+  }
+
+  if(selected && board[r][c]===""){
+    let dr=r-selected.r;
+    let dc=c-selected.c;
+    let movingPiece=board[selected.r][selected.c];
+    let isKing=movingPiece.includes("king");
+    let mustEat=canCapture(currentPlayer);
+
+    if(Math.abs(dr)==2 && Math.abs(dc)==2){
+
+      if(!isKing){
+        if(currentPlayer==="red" && dr!==-2) return;
+        if(currentPlayer==="black" && dr!==2) return;
+      }
+
+      let mr=selected.r+dr/2,mc=selected.c+dc/2;
+
+      if(board[mr][mc] &&
+         !board[mr][mc].includes(currentPlayer)){
+        board[mr][mc]="";
+        movePiece(r,c,true);
+      }
+    }
+    else if(!mustEat && Math.abs(dr)==1 && Math.abs(dc)==1){
+      if(
+        (currentPlayer==="red" && dr===-1) ||
+        (currentPlayer==="black" && dr===1) ||
+        isKing
+      ){
+        movePiece(r,c,false);
+      }
+    }
+  }
+}
+
+function movePiece(r,c,wasCapture){
+  let piece=board[selected.r][selected.c];
+
+  if(piece==="red" && r===0) piece="red-king";
+  if(piece==="black" && r===7) piece="black-king";
+
+  board[r][c]=piece;
+  board[selected.r][selected.c]="";
+
+  if(wasCapture && canCaptureFrom(r,c)){
+    selected={r,c};
+  }else{
+    selected=null;
+    currentPlayer=currentPlayer==="red"?"black":"red";
+  }
+
+  checkWinner();
+  syncGame();
+  drawBoard();
+}
+
+function updateScore(){
+  let red=0,black=0;
+  for(let r=0;r<8;r++)
+    for(let c=0;c<8;c++)
+      if(board[r][c])
+        board[r][c].includes("red")?red++:black++;
+  redScore.innerText=red;
+  blackScore.innerText=black;
+}
+
+function checkWinner(){
+  let red=0,black=0;
+  for(let r=0;r<8;r++)
+    for(let c=0;c<8;c++)
+      if(board[r][c])
+        board[r][c].includes("red")?red++:black++;
+
+  if(red===0 || black===0){
+    document.body.insertAdjacentHTML("beforeend",
+    `<div class="popup">
+      <div class="popupBox">
+        <h2>🏆 ${(red===0?"Black":"Red")} Wins!</h2>
+        <button onclick="location.reload()">Play Again</button>
+      </div>
+    </div>`);
+  }
+}
+
+function syncGame(){
+  update(roomRef,{board:board,turn:currentPlayer});
+}
+
+window.createRoom=function(){
+  const id=roomId.value;
+  if(!id) return alert("Enter Room ID");
+  roomRef=ref(db,"rooms/"+id);
+  myColor="red";
+  initBoard();
+  set(roomRef,{board:board,turn:"red",players:{red:true,black:false}});
+  waitingText.innerText="Waiting for Player 2...";
+  listenRoom();
+}
+
+window.joinRoom=function(){
+  const id=roomId.value;
+  if(!id) return alert("Enter Room ID");
+  roomRef=ref(db,"rooms/"+id);
+  myColor="black";
+  update(roomRef,{"players/black":true});
+  listenRoom();
+}
+
+function listenRoom(){
+  onValue(roomRef,(snap)=>{
+    const data=snap.val();
+    if(!data) return;
+    board=data.board;
+    currentPlayer=data.turn;
+    drawBoard();
+    if(data.players && data.players.red && data.players.black){
+      showGame();
+    }
+  });
+}
+
+window.resetGame=function(){
+  if(myColor!=="red") return;
+  initBoard();
+  currentPlayer="red";
+  syncGame();
+  drawBoard();
+}
+
+const boardEl=document.getElementById("board");
+const turnText=document.getElementById("turnText");
+const redScore=document.getElementById("redScore");
+const blackScore=document.getElementById("blackScore");
+
+initBoard();
+drawBoard();
+</script>
+</body>
+</html>
